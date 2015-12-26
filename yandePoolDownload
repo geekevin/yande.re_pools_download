@@ -1,0 +1,167 @@
+#重构 yande pool 下载
+
+"""模块导入"""
+import os,urllib,urllib.request,sys
+
+"""提示"""
+print("此脚本仅可以下载yande中pool标签下的图片集。")
+
+"""函数模块"""
+def getPage(Url):    #获取网页代码
+    #伪装成浏览器
+    headers = ('User-Agent','Mozilla/5.0 (compatible; MSIE 8.0; Windows NT 6.1) AppleWebKit/537.11 (KHTML, like Gecko) Chrome/23.0.1271.64 Safari/537.11')
+    opener = urllib.request.build_opener()
+    opener.addheaders = [headers]
+    urlBytes = opener.open(Url)
+    #print(urlBytes)
+    urlRead = urlBytes.read()
+    urlUtf8 = urlRead.decode("utf8")
+    urlList = urlUtf8.split("\n")
+    urlBytes.close()
+    """#print ("链接："+Url)
+    urlBytes=urllib.request.Request(Url)
+    #print(type(urlBytes))
+    #print(dir(urlBytes))
+    urlBytes=urllib.request.urlopen(urlBytes)
+    #print(type(urlBytes))
+    urlRead=urlBytes.read()
+    #print(type(urlRead))
+    urlUtf8=urlRead.decode('utf8')
+    urlList = urlUtf8.split("\n")
+    urlBytes.close()"""
+    return urlList
+
+#特殊字符检测筛选
+def strReplace(Name):
+    badStr = '\/:*?"<>|'
+    for Str in Name:
+        if Str in badStr:
+            Name = Name.replace(Str,"")
+    return Name
+
+def poolFolder(poolName):
+    yandeFile = os.getcwd()    #当前脚本路径
+    os.chdir(yandeFile)
+    while len(os.path.join(yandeFile,poolName)) > 200:
+        poolName = poolName.split("_")[:-1]    #根据预计路径检测修改预建的文件夹名
+        poolName = "_".join(poolName)
+    try:
+        os.mkdir("%s" %(poolName))    #创建图片文件夹
+        print("."*50)
+        print("成功创建了“%s”文件夹！" %(poolName))
+    except:
+        print("."*50)
+        print("无法创建“%s”文件夹，可能已存在！" %(poolName))    #创建文件夹
+    os.chdir("%s\%s" %(yandeFile,poolName))    #指定到当前文件夹
+    with open ("Download_Error.log", mode = "w",encoding = "utf-8") as initialize:    #初始化错误文件
+        initialize.write("")
+
+def imagesDown (ID_nameList,file_urlList):
+    def Download (urlDownload, Name, ext):    #下载图片
+        print("开始下载%s%s文件......" % (Name,ext))
+        try:
+            urllib.request.urlretrieve(urlDownload,r"%s%s"%(Name,ext))
+            print("."*50)
+            print("“%s%s”文件下载完成！" %(Name,ext))
+            return True
+        except:
+            return False
+    ####################
+    newNameList = []
+    ext = file_urlList [0][-4:]
+    DownloadFile = os.getcwd()    #获取当前路径
+    for imagesName in ID_nameList:    #检查路径+文件名是否过长并修改
+        while len(os.path.join (DownloadFile,imagesName + ext)) > 200:
+            imagesNameList = imagesName.split("_")[:-1]
+            imagesName = "_".join(imagesNameList)
+        newNameList.append(imagesName)
+    imagesNameUrl = dict(zip(file_urlList,newNameList))    #重新导入文件
+    for urlDownload in imagesNameUrl.keys():    #遍历链接
+        ext = urlDownload[-4:]
+        Name = imagesNameUrl[urlDownload]
+        Yes = Download (urlDownload, Name, ext)
+        cishu = 0    #重试次数
+        while (not Yes) and cishu<=5:
+            cishu+=1
+            print("%d次重试下载" % (cishu))
+            Yes = Download (urlDownload, Name, ext)
+            if cishu == 5:
+                print("."*50)
+                print("“%s%s”文件下载出错！\n错误信息记录在pool文件夹中的Download_Error.log文件里" %(Name,ext))    #出错
+                with open ("Download_Error.log", mode = "a",encoding = "utf-8") as Error:
+                    Error.write("%s%s | %s" %(Name,ext,urlDownload))
+                    Error.write("\n")
+                print("*"*70)
+
+"""主代码"""
+#获取主页链接，解析pool名字和单图子页链接（元组），数据结构：元组
+print("#"*70)
+lpoolUrl = "https://yande.re/pool/show/"    #pool链接的前半部分
+
+selectInput = input("如果有下载列表文件请输入“.”符号，手动输入直接回车：")
+if selectInput == ".":
+    try:
+        with open("poolList.log", mode="r", encoding="utf-8") as poolListRead:
+            poolListStr = poolListRead.read()
+        poolIDList = poolListStr.split("|")
+        with open("okPool.log", mode = "w", encoding = "utf-8") as okPoolWrite:
+            okPoolWrite.write("")
+        poolIDList[0] = poolIDList[0].lstrip("\ufeff")    #因为文件编码原因，会在读取到的字符串开头出现"\ufeff"字符段，需要去除
+        #print(poolIDList)
+    except:
+        print("pool列表文件异常")
+        poolIDList = [input("请手动输入pool链接最后的数字串：https://yande.re/pool/show/")]
+else:
+    poolIDList = [input("请输入pool链接最后的数字串：https://yande.re/pool/show/")]    #获取链接
+
+for poolID in poolIDList:
+    #创建空子页链接列表
+    ID_nameList = []
+    file_urlList = []
+    poolUrl = lpoolUrl + poolID
+    #print(poolUrl)
+    getPages = getPage(poolUrl)
+    print("#"*70)
+    print("开始解析pool页面代码......")
+    for urlLine in getPages:    #遍历网页代码列表
+        if '<title>' in urlLine:    #获取pool名：如果代码行中含有'<title>'关键字符
+            poolName = urlLine.split('>')[1].split(" |")[0]    #按照'>'分段，在第一段里再按照" |"分段提取pool名
+            poolName = strReplace(poolName)
+        elif '  Post.register_resp' in urlLine:
+            for imagesAttribute in urlLine.split("{"):
+                if ('https:' in imagesAttribute) and ('"tags"' in imagesAttribute) and (not '"updated_at"' in imagesAttribute) and (not '"index_page"' in imagesAttribute):
+                    #print(imagesAttribute)
+                    INU = imagesAttribute.split(",")
+                    #print(INU)
+                    ID,Name,file_url = INU[0],INU[1],INU[10]
+                    #print(ID,Name,file_url)
+                    ID = ID.split(":")[1]
+                    name = Name.split(":")[1].strip('"')    #获取图片名
+                    name = strReplace(name)    #检查名字
+                    name = name.replace(" ","_")
+                    ID_name = ID + "_" + name    #拼合ID和名字
+                    file_url = file_url.split('"')[3].replace('\\','')    #提取大图链接
+                    ID_nameList.append(ID_name)
+                    file_urlList.append(file_url)
+    
+    print("."*50)
+    print("pool页面代码解析完成，获得pool名和大图链接！")
+    print("#"*70)
+    
+    #创建pool文件夹，更改下载路径，返回文件夹路径
+    print("开始创建 %s 文件夹......" % (poolName))
+    poolFolder(poolName)
+    
+    #下载命名图片到文件夹
+    print("#"*70)
+    print("开始下载图片......")
+    print("#"*70)
+    imagesDown(ID_nameList,file_urlList)
+    print("#"*70)
+    print("图片下载完成!")
+    yandeFile = os.getcwd()
+    print(yandeFile)
+    folderPath = os.chdir("%s" %("\\".join(yandeFile.split("\\")[:-1])))    #回到上层目录
+    print(folderPath)
+    with open("okPool.log", mode = "a", encoding = "utf-8") as okPoolWrite:
+        okPoolWrite.write(poolID+":"+poolName+"\n")
